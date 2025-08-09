@@ -18,11 +18,10 @@ class RoomConsumer(AsyncWebsocketConsumer):
 
     async def disconnect(self, close_code):
         if self.room and self.username:
-            # Leave room group
-            await self.channel_layer.group_discard(
-                f'room_{self.room.id}',
-                self.channel_name
-            )
+
+            self.room.participants.remove(self.username)
+            await self.room.asave()
+
 
     async def receive(self, text_data):
         data = json.loads(text_data)
@@ -36,7 +35,10 @@ class RoomConsumer(AsyncWebsocketConsumer):
             
             await self.send(text_data=json.dumps({
                 'type': 'room_created',
-                'room_id': self.room.id
+                'room_id': self.room.id,
+                'participants': self.room.participants,
+                'timer': self.room.timer,
+                'rounds': self.room.rounds
             }))
         
         elif data['type'] == 'join_room':
@@ -55,6 +57,8 @@ class RoomConsumer(AsyncWebsocketConsumer):
                     'type': 'error',
                     'message': 'Room does not exist'
                 }))
+
+        
         
 
         
