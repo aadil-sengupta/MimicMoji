@@ -11,7 +11,7 @@ export const WebSocketProvider = ({ children }) => {
   const { username, isUsernameSet, setRandomUsername } = useUsername();
 
   useEffect(() => {
-    const WEBSOCKET_URL = import.meta.env.VITE_WEBSOCKET_URL || 'ws://5.78.154.173:8001';
+    const WEBSOCKET_URL = import.meta.env.VITE_WEBSOCKET_URL || 'wss://5.78.154.173:8001';
     const socket = new WebSocket(`${WEBSOCKET_URL}/ws/room/`); // Fixed URL path
     wsRef.current = socket;
 
