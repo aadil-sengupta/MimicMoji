@@ -1,21 +1,22 @@
 import {BrowserRouter as Router, Route, Routes} from "react-router-dom";
 import Home from "./pages/Home"
-import Join_Room from "./pages/Join_Room"
-import CreateRoom from "./pages/CreateRoom"
-
+import Room from "./pages/Room"
 import GameRoom from "./pages/GameRoom";
+import AppProviders from "./AppProviders";
 
 
 const App = () => {
   return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/joingame" element={<Join_Room />} />
-        <Route path="/room/:id" element={<GameRoom />} />
-        <Route path="/creategame" element={<CreateRoom/>} />
-      </Routes>
-    </Router>
+    <AppProviders>
+      <Router>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/room" element={<Room />} />
+          <Route path="/room/:id" element={<Room />} />
+          <Route path="/game" element={<GameRoom />} />
+        </Routes>
+      </Router>
+    </AppProviders>
   )
 }
 

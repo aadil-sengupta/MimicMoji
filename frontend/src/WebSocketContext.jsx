@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useRef, useEffect, useState } from "react";
+import { useUsername } from './UsernameContext';
 
 const WebSocketContext = createContext(null);
 
@@ -6,6 +7,8 @@ export const WebSocketProvider = ({ children }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('connecting');
   const wsRef = useRef(null);
+  const listenersRef = useRef(new Map());
+  const { username, isUsernameSet, setRandomUsername } = useUsername();
 
   useEffect(() => {
     const WEBSOCKET_URL = import.meta.env.VITE_WEBSOCKET_URL || 'ws://localhost:8000';
@@ -16,6 +19,16 @@ export const WebSocketProvider = ({ children }) => {
       console.log('WebSocket connected');
       setIsConnected(true);
       setConnectionStatus('connected');
+      
+      // Automatically send username when connection is established
+      const currentUsername = username || setRandomUsername();
+      if (currentUsername) {
+        console.log('Sending username:', currentUsername);
+        socket.send(JSON.stringify({
+          type: 'user',
+          username: currentUsername
+        }));
+      }
     };
     
     socket.onclose = () => {
@@ -31,13 +44,39 @@ export const WebSocketProvider = ({ children }) => {
     
     socket.onmessage = (event) => {
       console.log('WebSocket message received:', event.data);
-      // You can add global message handling here if needed
+      
+      try {
+        const data = JSON.parse(event.data);
+        
+        // Call all listeners for this message type
+        const messageListeners = listenersRef.current.get(data.type) || [];
+        messageListeners.forEach(listener => {
+          try {
+            listener(data);
+          } catch (error) {
+            console.error('Error in message listener:', error);
+          }
+        });
+        
+        // Call all global listeners (listening for '*')
+        const globalListeners = listenersRef.current.get('*') || [];
+        globalListeners.forEach(listener => {
+          try {
+            listener(data);
+          } catch (error) {
+            console.error('Error in global listener:', error);
+          }
+        });
+        
+      } catch (error) {
+        console.error('Error parsing WebSocket message:', error);
+      }
     };
 
     return () => {
       socket.close();
     };
-  }, []);
+  }, [username]); // Add username as dependency to re-send if it changes
 
   return (
     <WebSocketContext.Provider value={{ 
@@ -51,6 +90,28 @@ export const WebSocketProvider = ({ children }) => {
         }
         console.warn('WebSocket not connected, message not sent:', message);
         return false;
+      },
+      addEventListener: (messageType, callback) => {
+        if (!listenersRef.current.has(messageType)) {
+          listenersRef.current.set(messageType, []);
+        }
+        listenersRef.current.get(messageType).push(callback);
+        
+        // Return cleanup function
+        return () => {
+          const listeners = listenersRef.current.get(messageType) || [];
+          const index = listeners.indexOf(callback);
+          if (index > -1) {
+            listeners.splice(index, 1);
+          }
+        };
+      },
+      removeEventListener: (messageType, callback) => {
+        const listeners = listenersRef.current.get(messageType) || [];
+        const index = listeners.indexOf(callback);
+        if (index > -1) {
+          listeners.splice(index, 1);
+        }
       }
     }}>
       {children}

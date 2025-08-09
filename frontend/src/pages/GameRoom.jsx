@@ -1,64 +1,61 @@
 import React, { useState, useEffect } from 'react';
 import { useWebSocket } from '../WebSocketContext';
+import { useUsername } from '../UsernameContext';
 
 const GameRoom = ({ roomData = {}, onLeaveRoom = () => {} }) => {
-  const { ws, isConnected, sendMessage } = useWebSocket();
+  const { ws, isConnected, sendMessage, addEventListener } = useWebSocket();
+  const { username } = useUsername();
   // =============================================================================
   // WEBSOCKET MESSAGE HANDLING
   // =============================================================================
   
   useEffect(() => {
-    if (!ws) return;
+    if (!addEventListener) return;
 
-    const handleMessage = (event) => {
-      const data = JSON.parse(event.data);
-      console.log('Received WebSocket message:', data);
-      
-      switch (data.type) {
-        case 'connection_ready':
-          // Send username when connection is ready
-          sendMessage({
-            type: 'user',
-            username: username
-          });
-          break;
-          
-        case 'room_created':
-          console.log('Room created:', data.room_id);
-          setPlayers([{ id: username, name: username }]);
-          break;
-          
-        case 'joined_room':
-          console.log('Joined room:', data.room_id);
-          setPlayers(data.participants.map(name => ({ id: name, name })));
-          break;
-          
-        case 'participants_updated':
-          console.log('Participants updated:', data.participants);
-          setPlayers(data.participants.map(name => ({ id: name, name })));
-          
-          if (data.action === 'user_joined') {
-            console.log(`${data.username} joined the room`);
-          } else if (data.action === 'user_left') {
-            console.log(`${data.username} left the room`);
-          }
-          break;
-          
-        case 'error':
-          setError(data.message);
-          break;
-          
-        default:
-          console.log('Unhandled message type:', data.type);
-      }
-    };
+    const unsubscribers = [];
 
-    ws.addEventListener('message', handleMessage);
-    
+    // Listen for room creation
+    unsubscribers.push(
+      addEventListener('room_created', (data) => {
+        console.log('Room created:', data.room_id);
+        setPlayers(data.participants.map(name => ({ id: name, name })));
+      })
+    );
+
+    // Listen for joining room
+    unsubscribers.push(
+      addEventListener('joined_room', (data) => {
+        console.log('Joined room:', data.room_id);
+        setPlayers(data.participants.map(name => ({ id: name, name })));
+      })
+    );
+
+    // Listen for participants updates
+    unsubscribers.push(
+      addEventListener('participants_updated', (data) => {
+        console.log('Participants updated:', data.participants);
+        setPlayers(data.participants.map(name => ({ id: name, name })));
+        
+        if (data.action === 'user_joined') {
+          console.log(`${data.username} joined the room`);
+        } else if (data.action === 'user_left') {
+          console.log(`${data.username} left the room`);
+        }
+      })
+    );
+
+    // Listen for errors
+    unsubscribers.push(
+      addEventListener('error', (data) => {
+        setError(data.message);
+      })
+    );
+
+    // Cleanup all listeners
     return () => {
-      ws.removeEventListener('message', handleMessage);
+      unsubscribers.forEach(unsub => unsub());
     };
-  }, [ws, username, sendMessage]);
+  }, [addEventListener]);
   if (!roomData.roomId) {
     return (
       <div className="game-room-container">
@@ -83,7 +80,6 @@ const GameRoom = ({ roomData = {}, onLeaveRoom = () => {} }) => {
   const [submissions, setSubmissions] = useState([]);
   const [currentSubmission, setCurrentSubmission] = useState('');
   const [shareableLink, setShareableLink] = useState('');
-  const [username, setUsername] = useState('Host');
   
   // Loading and error states
   const [isLoading, setIsLoading] = useState(false);

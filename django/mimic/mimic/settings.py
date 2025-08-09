@@ -73,6 +73,13 @@ WSGI_APPLICATION = 'mimic.wsgi.application'
 
 ASGI_APPLICATION = "mimic.asgi.application"
 
+# Channel Layers Configuration for Django Channels
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer"
+    }
+}
+
 
 
 # Database
