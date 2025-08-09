@@ -1,15 +1,64 @@
 import React, { useState, useEffect } from 'react';
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
-const WEBSOCKET_URL = import.meta.env.VITE_WEBSOCKET_URL;
+import { useWebSocket } from '../WebSocketContext';
 
 const GameRoom = ({ roomData = {}, onLeaveRoom = () => {} }) => {
+  const { ws, isConnected, sendMessage } = useWebSocket();
   // =============================================================================
-  // BACKEND CONNECTION POINTS - REPLACE THESE WITH YOUR ACTUAL ENDPOINTS
+  // WEBSOCKET MESSAGE HANDLING
   // =============================================================================
- 
+  
+  useEffect(() => {
+    if (!ws) return;
 
-  // Handle missing roomData
+    const handleMessage = (event) => {
+      const data = JSON.parse(event.data);
+      console.log('Received WebSocket message:', data);
+      
+      switch (data.type) {
+        case 'connection_ready':
+          // Send username when connection is ready
+          sendMessage({
+            type: 'user',
+            username: username
+          });
+          break;
+          
+        case 'room_created':
+          console.log('Room created:', data.room_id);
+          setPlayers([{ id: username, name: username }]);
+          break;
+          
+        case 'joined_room':
+          console.log('Joined room:', data.room_id);
+          setPlayers(data.participants.map(name => ({ id: name, name })));
+          break;
+          
+        case 'participants_updated':
+          console.log('Participants updated:', data.participants);
+          setPlayers(data.participants.map(name => ({ id: name, name })));
+          
+          if (data.action === 'user_joined') {
+            console.log(`${data.username} joined the room`);
+          } else if (data.action === 'user_left') {
+            console.log(`${data.username} left the room`);
+          }
+          break;
+          
+        case 'error':
+          setError(data.message);
+          break;
+          
+        default:
+          console.log('Unhandled message type:', data.type);
+      }
+    };
+
+    ws.addEventListener('message', handleMessage);
+    
+    return () => {
+      ws.removeEventListener('message', handleMessage);
+    };
+  }, [ws, username, sendMessage]);
   if (!roomData.roomId) {
     return (
       <div className="game-room-container">
@@ -34,6 +83,7 @@ const GameRoom = ({ roomData = {}, onLeaveRoom = () => {} }) => {
   const [submissions, setSubmissions] = useState([]);
   const [currentSubmission, setCurrentSubmission] = useState('');
   const [shareableLink, setShareableLink] = useState('');
+  const [username, setUsername] = useState('Host');
   
   // Loading and error states
   const [isLoading, setIsLoading] = useState(false);
@@ -99,60 +149,6 @@ const GameRoom = ({ roomData = {}, onLeaveRoom = () => {} }) => {
   };
 
   // =============================================================================
-  // WEBSOCKET CONNECTION - CONNECT THIS TO YOUR WEBSOCKET
-  // =============================================================================
-  
-  
-      // TODO: Connect to your WebSocket for real-time updates
-      
-      const ws = new WebSocket(`${WEBSOCKET_URL}/ws.room`);
-      
-      ws.onopen = () => {
-        console.log('Connected to game room WebSocket');
-      };
-      
-      ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        
-        if (data.type === 'player_joined') {
-          setPlayers(prev => [...prev, data.player]);
-        }
-        
-        if (data.type === 'player_left') {
-          setPlayers(prev => prev.filter(p => p.id !== data.player_id));
-        }
-        
-        if (data.type === 'game_started') {
-          setGameStarted(true);
-          setCurrentRound(data.round || 1);
-        }
-        
-        if (data.type === 'new_submission') {
-          setSubmissions(prev => [...prev, data.submission]);
-        }
-        
-        if (data.type === 'round_ended') {
-          setCurrentRound(data.next_round);
-          setSubmissions([]); // Clear submissions for new round
-        }
-      };
-      
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
-        setError('Connection error - some features may not work');
-      };
-      
-      ws.onclose = () => {
-        console.log('WebSocket connection closed');
-      };
-      
-      return () => {
-        ws.close();
-      };
-      
-  
-
-  // =============================================================================
   // INITIALIZATION
   // =============================================================================
   
@@ -163,17 +159,26 @@ const GameRoom = ({ roomData = {}, onLeaveRoom = () => {} }) => {
       setShareableLink(link);
     }
     
-    // Add host as first player if not already added
-    if (players.length === 0) {
-      setPlayers([{ id: 'host', name: 'Host (You)' }]);
+    // Create or join room when component mounts
+    if (isConnected && roomData?.roomId) {
+      // If we have a roomId, try to join it
+      sendMessage({
+        type: 'join_room',
+        room_id: roomData.roomId
+      });
+    } else if (isConnected && !roomData?.roomId) {
+      // If no roomId, create a new room
+      sendMessage({
+        type: 'create_room'
+      });
     }
-  }, [roomData?.roomCode]);
+  }, [isConnected, roomData?.roomCode, roomData?.roomId, sendMessage]);
 
   // =============================================================================
   // GAME LOGIC
   // =============================================================================
   
-  const handleStartGame = async () => {
+  const handleStartGame = () => {
     if (players.length < 2) {
       setError('Need at least 2 players to start the game');
       return;
@@ -182,21 +187,21 @@ const GameRoom = ({ roomData = {}, onLeaveRoom = () => {} }) => {
     setIsLoading(true);
     setError('');
 
-    try {
-      const result = await startGameAPI(roomData?.roomId);
-      if (result.success) {
-        setGameStarted(true);
-        setCurrentRound(result.current_round || 1);
-        setSubmissions([]); 
-      }
-    } catch (err) {
-      setError(err.message || 'Failed to start game');
-    } finally {
+    // Send start game message via WebSocket
+    sendMessage({
+      type: 'start_game'
+    });
+    
+    // For now, start the game locally (you can enhance this with server validation)
+    setTimeout(() => {
+      setGameStarted(true);
+      setCurrentRound(1);
+      setSubmissions([]);
       setIsLoading(false);
-    }
+    }, 1000);
   };
 
-  const handleSubmitGuess = async () => {
+  const handleSubmitGuess = () => {
     if (!currentSubmission.trim()) {
       setError('Please enter a guess before submitting');
       return;
@@ -210,30 +215,24 @@ const GameRoom = ({ roomData = {}, onLeaveRoom = () => {} }) => {
     setIsLoading(true);
     setError('');
 
-    try {
-      const result = await submitGuessAPI(
-        roomData?.roomId, 
-        currentSubmission.trim(), 
-        'host', 
-        currentRound
-      );
-      
-      if (result.success) {
-        // Add submission to local state
-        const newSubmission = {
-          id: result.submission_id,
-          text: currentSubmission.trim(),
-          player: 'Host (You)',
-          playerId: 'host'
-        };
-        setSubmissions(prev => [...prev, newSubmission]);
-        setCurrentSubmission(''); // Clear input
-      }
-    } catch (err) {
-      setError(err.message || 'Failed to submit guess');
-    } finally {
-      setIsLoading(false);
-    }
+    // Send submission via WebSocket
+    sendMessage({
+      type: 'submit_guess',
+      guess: currentSubmission.trim(),
+      round: currentRound
+    });
+
+    // Add submission to local state immediately
+    const newSubmission = {
+      id: Date.now().toString(),
+      text: currentSubmission.trim(),
+      player: username,
+      playerId: username
+    };
+    
+    setSubmissions(prev => [...prev, newSubmission]);
+    setCurrentSubmission(''); // Clear input
+    setIsLoading(false);
   };
 
   // =============================================================================
@@ -288,6 +287,11 @@ const GameRoom = ({ roomData = {}, onLeaveRoom = () => {} }) => {
       {/* Room Header */}
       <div className="room-header">
         <h1 className="room-title">{roomData?.roomName || 'Game Room'}</h1>
+        <div className="connection-status">
+          <span className={`connection-indicator ${isConnected ? 'connected' : 'disconnected'}`}>
+            {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
+          </span>
+        </div>
         <div className="room-info">
           <div className="room-code-section">
             <span className="room-code-label">Room Code:</span>
